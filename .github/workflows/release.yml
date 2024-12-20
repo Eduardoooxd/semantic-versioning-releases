@@ -1,0 +1,137 @@
+name: Release Pipeline
+
+on:
+  pull_request:
+    types: [opened, labeled, unlabeled, synchronize]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version-label-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check version labels
+        run: |
+          LABELS=$(echo '${{ toJson(github.event.pull_request.labels) }}' | jq -r '.[].name')
+          VERSION_LABELS=$(echo "$LABELS" | grep -E '^(major|minor|patch)$' || true)
+          NUM_VERSION_LABELS=$(echo "$VERSION_LABELS" | wc -l)
+
+          if [ "$NUM_VERSION_LABELS" -eq 0 ]; then
+            echo "Error: PR must have exactly one version label (major, minor, or patch)"
+            exit 1
+          elif [ "$NUM_VERSION_LABELS" -gt 1 ]; then
+            echo "Error: PR cannot have multiple version labels"
+            exit 1
+          fi
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: "23"
+          distribution: "temurin"
+
+      - name: Get previous version
+        id: get_previous_version
+        run: |
+          PREV_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
+          echo "PREV_VERSION=$PREV_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Determine version bump
+        id: version_bump
+        run: |
+          PR_NUMBER=$(git log -1 --pretty=%B | grep -oP '#\K\d+' || echo "")
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR number found in commit message"
+            exit 1
+          fi
+
+          LABELS=$(gh pr view $PR_NUMBER --json labels -q '.labels[].name' || echo "")
+          if echo "$LABELS" | grep -q "^major$"; then
+            echo "BUMP_TYPE=major" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "^minor$"; then
+            echo "BUMP_TYPE=minor" >> $GITHUB_OUTPUT
+          elif echo "$LABELS" | grep -q "^patch$"; then
+            echo "BUMP_TYPE=patch" >> $GITHUB_OUTPUT
+          else
+            echo "No version label found"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate new version
+        id: calculate_version
+        run: |
+          PREV_VERSION=${{ steps.get_previous_version.outputs.PREV_VERSION }}
+          BUMP_TYPE=${{ steps.version_bump.outputs.BUMP_TYPE }}
+
+          # Remove 'v' prefix for calculation
+          VERSION=${PREV_VERSION#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          case $BUMP_TYPE in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          PREV_VERSION=${{ steps.get_previous_version.outputs.PREV_VERSION }}
+          NEW_VERSION=${{ steps.calculate_version.outputs.NEW_VERSION }}
+
+          # Generate release notes using git log
+          NOTES=$(git log --pretty=format:"- %s (%h)" ${PREV_VERSION}..HEAD)
+          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
+          echo "## Changes in ${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build and test
+        run: ./mvnw clean package
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: false
+          tags: |
+            eduardooolol/${{ github.event.repository.name }}:${{ steps.calculate_version.outputs.NEW_VERSION }}
+            eduardooolol/${{ github.event.repository.name }}:latest
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.calculate_version.outputs.NEW_VERSION }}
+          name: Release ${{ steps.calculate_version.outputs.NEW_VERSION }}
+          body: ${{ steps.release_notes.outputs.NOTES }}
+          draft: false
+          prerelease: false
