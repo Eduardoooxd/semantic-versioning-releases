@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class SemanticVersioningReleasesApplication {
 
 	public static void main(String[] args) {
-		// Spring application 1
+		// Spring application 2
 		SpringApplication.run(SemanticVersioningReleasesApplication.class, args);
 
 	}
