@@ -102,16 +102,16 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Build and test
-        run: ./mvnw clean package
+        run: ./gradlew clean build
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: false
-          tags: |
-            eduardooolol/${{ github.event.repository.name }}:${{ steps.calculate_version.outputs.NEW_VERSION }}
-            eduardooolol/${{ github.event.repository.name }}:latest
+      # - name: Build and push Docker image
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     context: .
+      #     push: false
+      #     tags: |
+      #       eduardooolol/${{ github.event.repository.name }}:${{ steps.calculate_version.outputs.NEW_VERSION }}
+      #       eduardooolol/${{ github.event.repository.name }}:latest
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
