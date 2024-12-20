@@ -11,7 +11,7 @@
 
 	<groupId>com.eduardo</groupId>
 	<artifactId>semantic-versioning-releases</artifactId>
-	<version>${revision}</version>
+	<version>1.0.1</version>
 
 	<name>semantic-versioning-releases</name>
 	<description>Demo project for Spring Boot</description>
