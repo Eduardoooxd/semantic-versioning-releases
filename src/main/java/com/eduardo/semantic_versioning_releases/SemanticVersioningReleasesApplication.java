@@ -7,7 +7,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class SemanticVersioningReleasesApplication {
 
 	public static void main(String[] args) {
+		// Spring application
 		SpringApplication.run(SemanticVersioningReleasesApplication.class, args);
+
 	}
 
 }
