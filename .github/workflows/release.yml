@@ -20,7 +20,7 @@ jobs:
         run: |
           LABELS=$(echo '${{ toJson(github.event.pull_request.labels) }}' | jq -r '.[].name')
           VERSION_LABELS=$(echo "$LABELS" | grep -E '^(major|minor|patch)$' || true)
-          NUM_VERSION_LABELS=$(echo "$VERSION_LABELS" | wc -l)
+          NUM_VERSION_LABELS=$(echo "$VERSION_LABELS" | wc -w)
 
           if [ "$NUM_VERSION_LABELS" -eq 0 ]; then
             echo "Error: PR must have exactly one version label (major, minor, or patch)"
@@ -101,20 +101,6 @@ jobs:
           NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Generate release notes
-        id: release_notes
-        run: |
-          PREV_VERSION=${{ steps.get_previous_version.outputs.PREV_VERSION }}
-          NEW_VERSION=${{ steps.calculate_version.outputs.NEW_VERSION }}
-
-          # Generate release notes using git log
-          NOTES=$(git log --pretty=format:"- %s (%h)" ${PREV_VERSION}..HEAD)
-          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
-          echo "## Changes in ${NEW_VERSION}" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Build and test
         run: ./mvnw clean package
 
@@ -132,6 +118,6 @@ jobs:
         with:
           tag_name: ${{ steps.calculate_version.outputs.NEW_VERSION }}
           name: Release ${{ steps.calculate_version.outputs.NEW_VERSION }}
-          body: ${{ steps.release_notes.outputs.NOTES }}
+          generate_release_notes: true
           draft: false
           prerelease: false
