@@ -1,8 +1,6 @@
 name: Release Pipeline
 
 on:
-  pull_request:
-    types: [opened, labeled, unlabeled, synchronize]
   push:
     branches:
       - main
@@ -12,26 +10,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  version-label-check:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check version labels
-        run: |
-          LABELS=$(echo '${{ toJson(github.event.pull_request.labels) }}' | jq -r '.[].name')
-          VERSION_LABELS=$(echo "$LABELS" | grep -E '^(major|minor|patch)$' || true)
-          NUM_VERSION_LABELS=$(echo "$VERSION_LABELS" | wc -w)
-
-          if [ "$NUM_VERSION_LABELS" -eq 0 ]; then
-            echo "Error: PR must have exactly one version label (major, minor, or patch)"
-            exit 1
-          elif [ "$NUM_VERSION_LABELS" -gt 1 ]; then
-            echo "Error: PR cannot have multiple version labels"
-            exit 1
-          fi
-
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -43,14 +22,9 @@ jobs:
         with:
           java-version: "23"
           distribution: "temurin"
+          cache: "maven"
 
-      - name: Get previous version
-        id: get_previous_version
-        run: |
-          PREV_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
-          echo "PREV_VERSION=$PREV_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Determine version bump
+      - name: Determine version bump from PR
         id: version_bump
         run: |
           PR_NUMBER=$(git log -1 --pretty=%B | grep -oP '#\K\d+' || echo "")
@@ -73,17 +47,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Calculate new version
-        id: calculate_version
+      - name: Update version
+        id: update_version
         run: |
-          PREV_VERSION=${{ steps.get_previous_version.outputs.PREV_VERSION }}
-          BUMP_TYPE=${{ steps.version_bump.outputs.BUMP_TYPE }}
+          # Read current version components
+          MAJOR=$(grep "version.major" version.properties | cut -d'=' -f2)
+          MINOR=$(grep "version.minor" version.properties | cut -d'=' -f2)
+          PATCH=$(grep "version.patch" version.properties | cut -d'=' -f2)
 
-          # Remove 'v' prefix for calculation
-          VERSION=${PREV_VERSION#v}
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-
-          case $BUMP_TYPE in
+          # Bump version based on label
+          case ${{ steps.version_bump.outputs.BUMP_TYPE }} in
             major)
               MAJOR=$((MAJOR + 1))
               MINOR=0
@@ -98,11 +71,20 @@ jobs:
               ;;
           esac
 
-          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          # Update version.properties
+          sed -i "s/version.major=.*/version.major=$MAJOR/" version.properties
+          sed -i "s/version.minor=.*/version.minor=$MINOR/" version.properties
+          sed -i "s/version.patch=.*/version.patch=$PATCH/" version.properties
+
+          # Set new version for later steps
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
 
+          # Update POM version
+          mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
+
       - name: Build and test
-        run: ./gradlew clean build
+        run: mvn clean package
 
       # - name: Build and push Docker image
       #   uses: docker/build-push-action@v4
@@ -116,8 +98,16 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.calculate_version.outputs.NEW_VERSION }}
-          name: Release ${{ steps.calculate_version.outputs.NEW_VERSION }}
+          tag_name: v${{ steps.update_version.outputs.NEW_VERSION }}
+          name: Release v${{ steps.update_version.outputs.NEW_VERSION }}
           generate_release_notes: true
           draft: false
           prerelease: false
+
+      - name: Commit version updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add version.properties pom.xml
+          git commit -m "Bump version to v${{ steps.update_version.outputs.NEW_VERSION }}"
+          git push

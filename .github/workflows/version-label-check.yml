@@ -1,0 +1,27 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, labeled, unlabeled, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  version-label-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check version labels
+        run: |
+          LABELS=$(echo '${{ toJson(github.event.pull_request.labels) }}' | jq -r '.[].name')
+          VERSION_LABELS=$(echo "$LABELS" | grep -E '^(major|minor|patch)$' || true)
+          NUM_VERSION_LABELS=$(echo "$VERSION_LABELS" | wc -w)
+
+          if [ "$NUM_VERSION_LABELS" -eq 0 ]; then
+            echo "Error: PR must have exactly one version label (major, minor, or patch)"
+            exit 1
+          elif [ "$NUM_VERSION_LABELS" -gt 1 ]; then
+            echo "Error: PR cannot have multiple version labels"
+            exit 1
+          fi
