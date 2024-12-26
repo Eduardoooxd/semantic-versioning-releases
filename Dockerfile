@@ -2,9 +2,10 @@
 FROM maven:3.9.9-eclipse-temurin-23 AS builder
 WORKDIR /app
 COPY pom.xml .
+COPY version.properties .
 RUN mvn dependency:go-offline
 COPY src ./src
-RUN mvn clean package -DskipTests -Dproperties.maven.skip=true
+RUN mvn clean package -DskipTests
 
 # Run stage
 FROM eclipse-temurin:23.0.1_11-jre-ubi9-minimal
