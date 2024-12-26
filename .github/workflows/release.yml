@@ -95,6 +95,14 @@ jobs:
       #       eduardooolol/${{ github.event.repository.name }}:${{ steps.calculate_version.outputs.NEW_VERSION }}
       #       eduardooolol/${{ github.event.repository.name }}:latest
 
+      - name: Commit version updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add version.properties pom.xml
+          git commit -m "Bump version to v${{ steps.update_version.outputs.NEW_VERSION }}"
+          git push
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -103,11 +111,3 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
-
-      - name: Commit version updates
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add version.properties pom.xml
-          git commit -m "Bump version to v${{ steps.update_version.outputs.NEW_VERSION }}"
-          git push
