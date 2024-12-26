@@ -28,22 +28,21 @@ jobs:
         id: version_bump
         run: |
           PR_NUMBER=$(git log -1 --pretty=%B | grep -oP '#\K\d+' || echo "")
-          if [ -z "$PR_NUMBER" ]; then
-            echo "No PR number found in commit message"
-            exit 1
+          BUMP_TYPE="patch"  # Default to patch if no PR or label is found
+
+          if [ ! -z "$PR_NUMBER" ]; then
+            LABELS=$(gh pr view $PR_NUMBER --json labels -q '.labels[].name' || echo "")
+            if echo "$LABELS" | grep -q "^major$"; then
+              BUMP_TYPE="major"
+            elif echo "$LABELS" | grep -q "^minor$"; then
+              BUMP_TYPE="minor"
+            elif echo "$LABELS" | grep -q "^patch$"; then
+              BUMP_TYPE="patch"
+            fi
           fi
 
-          LABELS=$(gh pr view $PR_NUMBER --json labels -q '.labels[].name' || echo "")
-          if echo "$LABELS" | grep -q "^major$"; then
-            echo "BUMP_TYPE=major" >> $GITHUB_OUTPUT
-          elif echo "$LABELS" | grep -q "^minor$"; then
-            echo "BUMP_TYPE=minor" >> $GITHUB_OUTPUT
-          elif echo "$LABELS" | grep -q "^patch$"; then
-            echo "BUMP_TYPE=patch" >> $GITHUB_OUTPUT
-          else
-            echo "No version label found"
-            exit 1
-          fi
+          echo "BUMP_TYPE=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "Using bump type: $BUMP_TYPE (PR #$PR_NUMBER)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
